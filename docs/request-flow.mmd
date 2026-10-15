@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant C as Client
+    participant Z as Zitadel
+    participant A as APISIX
+    participant O as OPA
+    participant N as Node app
+
+    C->>Z: POST /oauth/v2/token (client_credentials, project aud scope)
+    Z-->>C: JWT access token
+    C->>A: POST /api/hello (Authorization: Bearer JWT)
+    A->>Z: discovery + JWKS (cached)
+    A->>A: verify signature, iss, exp
+    alt invalid or missing token
+        A-->>C: 401
+    end
+    A->>O: POST /v1/data/apisix/authz {method, path, headers, route}
+    O->>O: project = data.routes[route.id], roles = data.server_roles[project][sub]
+    alt GET, or writer role present
+        O-->>A: allow = true, headers.X-Roles
+        A->>N: forward + X-Access-Token + X-Roles
+        N-->>A: 200 JSON
+        A-->>C: 200
+    else no writer role on a write
+        O-->>A: allow = false, reason
+        A-->>C: 403 writer role required
+    end

@@ -1,0 +1,57 @@
+upstreams:
+  - id: app
+    type: roundrobin
+    nodes:
+      "app:3000": 1
+
+routes:
+  - id: api
+    uri: /api/*
+    upstream_id: app
+    plugins:
+      openid-connect:
+        client_id: apisix
+        client_secret: unused-with-jwks
+        discovery: http://zitadel.localhost:8080/.well-known/openid-configuration
+        bearer_only: true
+        use_jwks: true
+        set_access_token_header: true
+        access_token_in_authorization_header: false
+      opa:
+        host: http://opa:8181
+        policy: apisix/authz
+        with_route: true
+        send_headers_upstream:
+          - X-Roles
+
+  - id: option-a-gateway-login
+    uri: /a/*
+    upstream_id: app
+    plugins:
+      openid-connect:
+        client_id: $env://WEB_CLIENT_ID
+        client_secret: $env://WEB_CLIENT_SECRET
+        discovery: http://zitadel.localhost:8080/.well-known/openid-configuration
+        bearer_only: false
+        use_pkce: true
+        scope: openid profile email urn:zitadel:iam:org:projects:roles
+        redirect_uri: http://localhost:9080/a/callback
+        logout_path: /a/logout
+        post_logout_redirect_uri: http://localhost:9080/a/
+        session:
+          secret: demo-session-secret-change-me-0123456789
+        set_access_token_header: true
+        access_token_in_authorization_header: false
+        set_id_token_header: true
+        set_userinfo_header: true
+      opa:
+        host: http://opa:8181
+        policy: apisix/authz
+        with_route: true
+        send_headers_upstream:
+          - X-Roles
+
+  - id: option-b-spa
+    uri: /b/*
+    upstream_id: app
+#END

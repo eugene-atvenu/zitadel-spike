@@ -1,0 +1,123 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: zitadel
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d zitadel"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - pgdata:/var/lib/postgresql
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:${ZITADEL_VERSION:-v4.19.4}
+    user: "0"
+    command: start-from-init --masterkey "MasterkeyNeedsToHave32Characters" --tlsMode disabled
+    environment:
+      ZITADEL_EXTERNALDOMAIN: zitadel.localhost
+      ZITADEL_EXTERNALPORT: 8080
+      ZITADEL_EXTERNALSECURE: "false"
+      ZITADEL_TLS_ENABLED: "false"
+      ZITADEL_DEFAULTINSTANCE_FEATURES_LOGINV2_REQUIRED: "false"
+      ZITADEL_DEFAULTINSTANCE_LOGINPOLICY_MFAINITSKIPLIFETIME: "0s"
+      ZITADEL_DATABASE_POSTGRES_HOST: postgres
+      ZITADEL_DATABASE_POSTGRES_PORT: 5432
+      ZITADEL_DATABASE_POSTGRES_DATABASE: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_USERNAME: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_PASSWORD: zitadel
+      ZITADEL_DATABASE_POSTGRES_USER_SSL_MODE: disable
+      ZITADEL_DATABASE_POSTGRES_ADMIN_USERNAME: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_PASSWORD: postgres
+      ZITADEL_DATABASE_POSTGRES_ADMIN_SSL_MODE: disable
+      ZITADEL_FIRSTINSTANCE_ORG_NAME: demo
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_USERNAME: admin
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORD: Password1!
+      ZITADEL_FIRSTINSTANCE_ORG_HUMAN_PASSWORDCHANGEREQUIRED: "false"
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_USERNAME: bootstrap
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: bootstrap
+      ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2030-01-01T00:00:00Z"
+      ZITADEL_FIRSTINSTANCE_PATPATH: /bootstrap/admin.pat
+    ports:
+      - "8080:8080"
+    networks:
+      default:
+        aliases:
+          - zitadel.localhost
+    volumes:
+      - bootstrap:/bootstrap
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  bootstrap:
+    image: alpine:3.24
+    command: ["/bin/sh", "/scripts/bootstrap.sh"]
+    volumes:
+      - bootstrap:/bootstrap
+      - ./bootstrap/bootstrap.sh:/scripts/bootstrap.sh:ro
+      - ./generated:/generated
+    depends_on:
+      zitadel:
+        condition: service_healthy
+
+  mailpit:
+    image: axllent/mailpit:v1.31.6
+    ports:
+      - "8025:8025"
+
+  opa:
+    image: openpolicyagent/opa:1.21.2
+    command: ["run", "--server", "--addr", ":8181", "--log-level", "info", "/policies", "/generated/opa-data.json"]
+    volumes:
+      - ./opa:/policies:ro
+      - ./generated:/generated:ro
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+
+  role-sync:
+    image: alpine:3.24
+    command: ["/bin/sh", "/scripts/sync.sh"]
+    volumes:
+      - bootstrap:/bootstrap:ro
+      - ./role-sync/sync.sh:/scripts/sync.sh:ro
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      opa:
+        condition: service_started
+
+  app:
+    build: ./app
+    volumes:
+      - ./generated:/generated:ro
+
+  apisix:
+    image: apache/apisix:3.19.0-debian
+    entrypoint: ["/bin/sh", "-c", "set -a && . /generated/creds.env && exec /docker-entrypoint.sh docker-start"]
+    volumes:
+      - ./apisix/config.yaml:/usr/local/apisix/conf/config.yaml:ro
+      - ./apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+      - ./generated:/generated:ro
+    ports:
+      - "9080:9080"
+    depends_on:
+      bootstrap:
+        condition: service_completed_successfully
+      opa:
+        condition: service_started
+      app:
+        condition: service_started
+
+volumes:
+  pgdata:
+  bootstrap:

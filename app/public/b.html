@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Option B · SPA login</title>
+  <style>
+    :root { --bg: #f7f7f5; --fg: #1d1d1b; --muted: #6b6b66; --card: #ffffff; --line: #e2e2dc; --accent: #2457c5; --ok: #1f7a3a; --bad: #b3261e; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #161615; --fg: #ecebe6; --muted: #9a9993; --card: #1f1f1d; --line: #33332f; --accent: #7aa2ff; --ok: #5cc27d; --bad: #ff8a80; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 16px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin-bottom: 16px; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+    button { font: inherit; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; }
+    button:hover { border-color: var(--accent); }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    pre { background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 12px; overflow-x: auto; margin: 12px 0 0; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
+    .status-ok { color: var(--ok); } .status-bad { color: var(--bad); }
+    button:disabled { opacity: .45; cursor: not-allowed; border-color: var(--line); }
+    .override { display: block; margin-top: 10px; color: var(--muted); font-size: 14px; }
+    ol { margin: 0; padding-left: 20px; } li { margin: 4px 0; }
+    code { font-size: 13px; }
+    nav { margin-top: 24px; color: var(--muted); }
+    nav a { color: var(--accent); }
+    [hidden] { display: none !important; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Option B · SPA login</h1>
+  <p class="sub">This page runs the OIDC login itself and holds the access token. APISIX only validates Bearer tokens.</p>
+
+  <section>
+    <h2>Signed in as</h2>
+    <div id="who">…</div>
+    <div class="row" id="logged-out" hidden><button id="login">Log in with Zitadel</button></div>
+  </section>
+
+  <section id="api" hidden>
+    <h2>Call the API</h2>
+    <div class="row">
+      <button data-method="GET">GET /api/hello</button>
+      <button data-method="POST" id="post" disabled>POST /api/hello</button>
+      <button id="logout">Log out</button>
+    </div>
+    <label class="override" id="override" hidden><input type="checkbox"> No <code>editor</code> client role in your token, so POST is locked. Enable it anyway to see the server reject it.</label>
+    <pre id="out">Click a button. Requests send Authorization: Bearer &lt;access token&gt;.</pre>
+  </section>
+
+  <section>
+    <h2>What the browser holds</h2>
+    <p>The access token, kept in <code>sessionStorage</code> by <code>oidc-client-ts</code> and readable by this page's JavaScript:</p>
+    <pre id="token">(not signed in)</pre>
+  </section>
+
+  <section>
+    <h2>Flow</h2>
+    <ol>
+      <li>Page loads; JavaScript sees no token and shows “Log in”.</li>
+      <li>The browser redirects to Zitadel with a PKCE challenge (no client secret; public client).</li>
+      <li>User signs in; Zitadel redirects back to <code>/b/?code=…</code>.</li>
+      <li>JavaScript exchanges the code for tokens directly with Zitadel (CORS) and stores them.</li>
+      <li>Each API call sends <code>Authorization: Bearer</code> to <code>/api/*</code>; APISIX verifies the JWT, OPA authorizes.</li>
+    </ol>
+  </section>
+
+  <nav>Compare with <a href="/a/">Option A · Gateway login</a></nav>
+</main>
+<script src="https://cdn.jsdelivr.net/npm/oidc-client-ts@3.1.0/dist/browser/oidc-client-ts.min.js" integrity="sha384-cl/YPPu7KQlFcaRg3Cq3DsU+Jh0s9V9Vx9zqGFR+gbue22aT1fXfKlPEV9dJdg5N" crossorigin="anonymous"></script>
+<script>
+  const $ = (id) => document.getElementById(id);
+
+  function rolesFrom(claims) {
+    const roles = new Set();
+    for (const [key, value] of Object.entries(claims)) {
+      if (/^urn:zitadel:iam:org:project:([0-9]+:)?roles$/.test(key)) Object.keys(value).forEach((r) => roles.add(r));
+    }
+    return [...roles];
+  }
+
+  async function main() {
+    const config = await fetch("/b/config.json").then((r) => r.json());
+    const home = `${location.origin}/b/`;
+    const manager = new oidc.UserManager({
+      authority: config.authority,
+      client_id: config.clientId,
+      redirect_uri: home,
+      post_logout_redirect_uri: home,
+      response_type: "code",
+      scope: `openid profile email urn:zitadel:iam:org:projects:roles urn:zitadel:iam:org:project:id:${config.projectId}:aud`,
+    });
+
+    if (new URLSearchParams(location.search).has("code")) {
+      await manager.signinRedirectCallback();
+      history.replaceState({}, "", home);
+    }
+
+    const user = await manager.getUser();
+    $("login").onclick = () => manager.signinRedirect();
+    $("logout").onclick = () => manager.signoutRedirect();
+
+    if (!user || user.expired) {
+      $("who").textContent = "Not signed in";
+      $("logged-out").hidden = false;
+      return;
+    }
+
+    const claims = JSON.parse(atob(user.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/")));
+    const clientRoles = rolesFrom(claims);
+    $("who").textContent = `${user.profile.preferred_username} · client roles: ${clientRoles.join(", ") || "none"}`;
+    $("token").textContent = user.access_token;
+    $("post").disabled = !clientRoles.includes("editor");
+    $("override").hidden = !$("post").disabled;
+    $("override").querySelector("input").onchange = (e) => { $("post").disabled = !e.target.checked; };
+    $("api").hidden = false;
+
+    document.querySelectorAll("button[data-method]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const res = await fetch("/api/hello", {
+          method: b.dataset.method,
+          headers: { Authorization: `Bearer ${user.access_token}` },
+        });
+        const out = $("out");
+        out.innerHTML = "";
+        const status = document.createElement("span");
+        status.className = res.ok ? "status-ok" : "status-bad";
+        status.textContent = `${res.status} ${res.statusText}\n`;
+        out.append(status, await res.text());
+      }));
+  }
+
+  main().catch((err) => { $("who").textContent = `Error: ${err.message}`; });
+</script>
+</body>
+</html>

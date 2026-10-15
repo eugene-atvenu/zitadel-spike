@@ -1,0 +1,28 @@
+sequenceDiagram
+    title Option B: the single-page app handles the login (Bearer token)
+    participant B as Browser (SPA)
+    participant A as APISIX
+    participant Z as Zitadel
+    participant O as OPA
+    participant N as Node app
+
+    B->>A: GET /b/ (static page, no auth)
+    A->>N: forward
+    N-->>B: HTML + /b/config.json
+    B->>Z: redirect to /oauth/v2/authorize (code + PKCE, public client)
+    Z-->>B: login page, then 302 to /b/?code=...
+    B->>Z: POST /oauth/v2/token (code + PKCE verifier, CORS, no secret)
+    Z-->>B: access + ID tokens, stored in sessionStorage
+    B->>A: POST /api/hello (Authorization: Bearer token)
+    A->>Z: JWKS (cached)
+    A->>A: verify JWT signature, iss, exp
+    A->>O: authz query (headers + route id)
+    O->>O: server roles = data.server_roles[project][sub]
+    alt writer role
+        O-->>A: allow + X-Roles
+        A->>N: forward + X-Roles
+        N-->>B: 200
+    else no writer role
+        O-->>A: deny
+        A-->>B: 403 writer role required
+    end

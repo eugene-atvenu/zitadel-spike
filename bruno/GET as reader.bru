@@ -1,0 +1,21 @@
+meta {
+  name: GET as reader
+  type: http
+  seq: 4
+}
+
+get {
+  url: {{apisixUrl}}/api/hello
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{readerToken}}
+}
+
+tests {
+  test("returns 200", () => {
+    expect(res.status).to.equal(200);
+  });
+}

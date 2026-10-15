@@ -1,0 +1,19 @@
+architecture-beta
+    service client(internet)[API client]
+
+    group compose(cloud)[docker compose]
+    service apisix(server)[APISIX] in compose
+    service app(server)[Node app] in compose
+    service opa(server)[OPA] in compose
+    service sync(server)[role-sync] in compose
+    service zitadel(server)[Zitadel IdP] in compose
+    service pg(database)[Postgres] in compose
+
+    client:R -[Bearer JWT]-> L:apisix{group}
+    client:B -[get token]-> L:zitadel{group}
+    apisix:T -[forward]-> B:app
+    apisix:B -[JWKS]-> T:zitadel
+    apisix:R -[authz]-> T:opa
+    sync:L -[user grants]-> R:zitadel
+    sync:T -[server_roles]-> B:opa
+    zitadel:B --> T:pg

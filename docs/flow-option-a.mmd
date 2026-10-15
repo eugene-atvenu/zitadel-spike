@@ -1,0 +1,28 @@
+sequenceDiagram
+    title Option A: APISIX handles the login (session cookie)
+    participant B as Browser
+    participant A as APISIX
+    participant Z as Zitadel
+    participant O as OPA
+    participant N as Node app
+
+    B->>A: GET /a/ (no session)
+    A-->>B: 302 to Zitadel /oauth/v2/authorize (code + PKCE)
+    B->>Z: login page, username + password
+    Z-->>B: 302 to /a/callback?code=...
+    B->>A: GET /a/callback?code=...
+    A->>Z: POST /oauth/v2/token (code + client secret, server-side)
+    Z-->>A: access, ID and refresh tokens
+    A-->>B: 302 to /a/ + Set-Cookie: session (HttpOnly, encrypted)
+    B->>A: POST /a/hello (cookie only)
+    A->>A: decrypt session, add X-Access-Token / X-ID-Token / X-Userinfo
+    A->>O: authz query (headers + route id)
+    O->>O: server roles = data.server_roles[project][sub]
+    alt writer role
+        O-->>A: allow + X-Roles
+        A->>N: forward with token headers + X-Roles
+        N-->>B: 200
+    else no writer role
+        O-->>A: deny
+        A-->>B: 403 writer role required
+    end

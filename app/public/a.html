@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Option A · Gateway login</title>
+  <style>
+    :root { --bg: #f7f7f5; --fg: #1d1d1b; --muted: #6b6b66; --card: #ffffff; --line: #e2e2dc; --accent: #2457c5; --ok: #1f7a3a; --bad: #b3261e; }
+    @media (prefers-color-scheme: dark) {
+      :root { --bg: #161615; --fg: #ecebe6; --muted: #9a9993; --card: #1f1f1d; --line: #33332f; --accent: #7aa2ff; --ok: #5cc27d; --bad: #ff8a80; }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--fg); font: 15px/1.5 system-ui, sans-serif; }
+    main { max-width: 760px; margin: 0 auto; padding: 32px 16px; }
+    h1 { font-size: 22px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    section { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px 18px; margin-bottom: 16px; }
+    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 0 0 10px; }
+    button, a.button { font: inherit; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--fg); cursor: pointer; text-decoration: none; display: inline-block; }
+    button:hover, a.button:hover { border-color: var(--accent); }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    pre { background: var(--bg); border: 1px solid var(--line); border-radius: 7px; padding: 12px; overflow-x: auto; margin: 12px 0 0; font-size: 13px; white-space: pre-wrap; word-break: break-all; }
+    .status-ok { color: var(--ok); } .status-bad { color: var(--bad); }
+    button:disabled { opacity: .45; cursor: not-allowed; border-color: var(--line); }
+    .override { display: block; margin-top: 10px; color: var(--muted); font-size: 14px; }
+    ol { margin: 0; padding-left: 20px; } li { margin: 4px 0; }
+    code { font-size: 13px; }
+    nav { margin-top: 24px; color: var(--muted); }
+    nav a { color: var(--accent); }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Option A · Gateway login</h1>
+  <p class="sub">APISIX runs the OIDC login and keeps the tokens. The browser only has a session cookie.</p>
+
+  <section>
+    <h2>Signed in as</h2>
+    <div id="who">…</div>
+  </section>
+
+  <section>
+    <h2>Call the API</h2>
+    <div class="row">
+      <button data-method="GET">GET /a/hello</button>
+      <button data-method="POST" id="post" disabled>POST /a/hello</button>
+      <a class="button" href="/a/logout">Log out</a>
+    </div>
+    <label class="override" id="override" hidden><input type="checkbox"> No <code>editor</code> client role in your token, so POST is locked. Enable it anyway to see the server reject it.</label>
+    <pre id="out">Click a button. Requests carry only the session cookie, no Authorization header.</pre>
+  </section>
+
+  <section>
+    <h2>What the browser holds</h2>
+    <p>An encrypted, HttpOnly APISIX session cookie. Cookies readable by this page's JavaScript: <code id="cookies"></code></p>
+  </section>
+
+  <section>
+    <h2>Flow</h2>
+    <ol>
+      <li>Browser requests <code>/a/</code> with no session.</li>
+      <li>APISIX redirects to Zitadel's login page (authorization code + PKCE).</li>
+      <li>User signs in; Zitadel redirects to <code>/a/callback</code> with a code.</li>
+      <li>APISIX exchanges the code for tokens server-side and sets the session cookie.</li>
+      <li>On each request APISIX adds <code>X-Access-Token</code>, <code>X-ID-Token</code>, <code>X-Userinfo</code>; OPA authorizes; the app reads the headers.</li>
+    </ol>
+  </section>
+
+  <nav>Compare with <a href="/b/">Option B · SPA login</a></nav>
+</main>
+<script>
+  const out = document.getElementById("out");
+  document.getElementById("cookies").textContent = document.cookie || "(none)";
+
+  async function call(method) {
+    const res = await fetch("/a/hello", { method });
+    const text = await res.text();
+    out.innerHTML = "";
+    const status = document.createElement("span");
+    status.className = res.ok ? "status-ok" : "status-bad";
+    status.textContent = `${res.status} ${res.statusText}\n`;
+    out.append(status, text);
+    return res.ok ? JSON.parse(text) : null;
+  }
+
+  document.querySelectorAll("button[data-method]").forEach((b) =>
+    b.addEventListener("click", () => call(b.dataset.method)));
+
+  function rolesFrom(claims) {
+    const roles = new Set();
+    for (const [key, value] of Object.entries(claims)) {
+      if (/^urn:zitadel:iam:org:project:([0-9]+:)?roles$/.test(key)) Object.keys(value).forEach((r) => roles.add(r));
+    }
+    return [...roles];
+  }
+
+  fetch("/a/me").then((r) => r.json()).then((claims) => {
+    const clientRoles = rolesFrom(claims);
+    document.getElementById("who").textContent =
+      `${claims.preferred_username} · client roles: ${clientRoles.join(", ") || "none"}`;
+    const post = document.getElementById("post");
+    const override = document.getElementById("override");
+    post.disabled = !clientRoles.includes("editor");
+    override.hidden = !post.disabled;
+    override.querySelector("input").onchange = (e) => { post.disabled = !e.target.checked; };
+  });
+</script>
+</body>
+</html>

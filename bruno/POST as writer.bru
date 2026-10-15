@@ -1,0 +1,21 @@
+meta {
+  name: POST as writer
+  type: http
+  seq: 6
+}
+
+post {
+  url: {{apisixUrl}}/api/hello
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{writerToken}}
+}
+
+tests {
+  test("returns 200", () => {
+    expect(res.status).to.equal(200);
+  });
+}

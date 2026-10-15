@@ -1,0 +1,6 @@
+{
+  "version": "1",
+  "name": "apisix-zitadel-opa",
+  "type": "collection",
+  "ignore": ["node_modules", ".git"]
+}

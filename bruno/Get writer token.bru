@@ -1,0 +1,36 @@
+meta {
+  name: Get writer token
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{zitadelUrl}}/oauth/v2/token
+  body: formUrlEncoded
+  auth: basic
+}
+
+headers {
+  Host: zitadel.localhost:8080
+}
+
+auth:basic {
+  username: {{process.env.WRITER_CLIENT_ID}}
+  password: {{process.env.WRITER_CLIENT_SECRET}}
+}
+
+body:form-urlencoded {
+  grant_type: client_credentials
+  scope: openid urn:zitadel:iam:org:project:id:{{process.env.API_PROJECT_ID}}:aud
+}
+
+script:post-response {
+  bru.setVar("writerToken", res.body.access_token);
+}
+
+tests {
+  test("returns an access token", () => {
+    expect(res.status).to.equal(200);
+    expect(res.body.access_token).to.be.a("string");
+  });
+}

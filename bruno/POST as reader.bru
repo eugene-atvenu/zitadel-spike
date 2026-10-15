@@ -1,0 +1,21 @@
+meta {
+  name: POST as reader
+  type: http
+  seq: 5
+}
+
+post {
+  url: {{apisixUrl}}/api/hello
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{readerToken}}
+}
+
+tests {
+  test("returns 403", () => {
+    expect(res.status).to.equal(403);
+  });
+}

@@ -1,0 +1,17 @@
+meta {
+  name: GET no token
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{apisixUrl}}/api/hello
+  body: none
+  auth: none
+}
+
+tests {
+  test("returns 401", () => {
+    expect(res.status).to.equal(401);
+  });
+}
