@@ -1,0 +1,21 @@
+meta {
+  name: Block writer
+  type: http
+  seq: 8
+}
+
+put {
+  url: {{roleSyncUrl}}/blocks/{{writerSub}}
+  body: json
+  auth: none
+}
+
+body:json {
+  {"reason": "bruno"}
+}
+
+tests {
+  test("returns 200", () => {
+    expect(res.status).to.equal(200);
+  });
+}

@@ -41,6 +41,7 @@ services:
       ZITADEL_FIRSTINSTANCE_ORG_MACHINE_MACHINE_NAME: bootstrap
       ZITADEL_FIRSTINSTANCE_ORG_MACHINE_PAT_EXPIRATIONDATE: "2030-01-01T00:00:00Z"
       ZITADEL_FIRSTINSTANCE_PATPATH: /bootstrap/admin.pat
+      ZITADEL_HTTPCLIENT_DENYLIST: "localhost,0.0.0.0/8,10.0.0.0/8,100.64.0.0/10,127.0.0.0/8,169.254.0.0/16,192.168.0.0/16,198.18.0.0/15,::/128,::1/128,fc00::/7,fe80::/10"
     ports:
       - "8080:8080"
     networks:
@@ -76,25 +77,39 @@ services:
 
   opa:
     image: openpolicyagent/opa:1.21.2
-    command: ["run", "--server", "--addr", ":8181", "--log-level", "info", "/policies", "/generated/opa-data.json"]
+    command: ["run", "--server", "--addr", ":8181", "--log-level", "info", "/policies", "/generated/opa-data.json", "/state/server_roles.json", "/state/blocked.json"]
     volumes:
       - ./opa:/policies:ro
       - ./generated:/generated:ro
+      - role-sync-state:/state:ro
     depends_on:
       bootstrap:
         condition: service_completed_successfully
+      role-sync:
+        condition: service_healthy
 
   role-sync:
-    image: alpine:3.24
-    command: ["/bin/sh", "/scripts/sync.sh"]
+    image: node:26-alpine
+    command: ["node", "/app/index.js"]
+    environment:
+      OPA_URLS: http://opa:8181
+      POLL_INTERVAL_SECONDS: 5
+      FULL_REBUILD_SECONDS: 86400
+      STALE_AFTER_SECONDS: 60
+    ports:
+      - "127.0.0.1:8282:8282"
     volumes:
       - bootstrap:/bootstrap:ro
-      - ./role-sync/sync.sh:/scripts/sync.sh:ro
+      - ./role-sync:/app:ro
+      - role-sync-state:/state
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8282/healthz"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
     depends_on:
       bootstrap:
         condition: service_completed_successfully
-      opa:
-        condition: service_started
 
   app:
     build: ./app
@@ -121,3 +136,4 @@ services:
 volumes:
   pgdata:
   bootstrap:
+  role-sync-state:

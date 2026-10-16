@@ -14,6 +14,7 @@ architecture-beta
     apisix:T -[forward]-> B:app
     apisix:B -[JWKS]-> T:zitadel
     apisix:R -[authz]-> T:opa
-    sync:L -[user grants]-> R:zitadel
-    sync:T -[server_roles]-> B:opa
+    sync:L -[grant events]-> R:zitadel
+    zitadel:R -[webhook]-> L:sync
+    sync:T -[server_roles, blocked]-> B:opa
     zitadel:B --> T:pg

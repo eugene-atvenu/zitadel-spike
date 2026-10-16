@@ -15,6 +15,10 @@ sequenceDiagram
     end
     A->>O: POST /v1/data/apisix/authz {method, path, headers, route}
     O->>O: project = data.routes[route.id], roles = data.server_roles[project][sub]
+    alt sub in data.blocked
+        O-->>A: allow = false, reason
+        A-->>C: 403 user blocked
+    end
     alt GET, or writer role present
         O-->>A: allow = true, headers.X-Roles
         A->>N: forward + X-Access-Token + X-Roles

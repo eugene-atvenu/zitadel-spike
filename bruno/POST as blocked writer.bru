@@ -1,0 +1,21 @@
+meta {
+  name: POST as blocked writer
+  type: http
+  seq: 9
+}
+
+post {
+  url: {{apisixUrl}}/api/hello
+  body: none
+  auth: bearer
+}
+
+auth:bearer {
+  token: {{writerToken}}
+}
+
+tests {
+  test("returns 403", () => {
+    expect(res.status).to.equal(403);
+  });
+}

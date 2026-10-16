@@ -26,6 +26,8 @@ body:form-urlencoded {
 
 script:post-response {
   bru.setVar("writerToken", res.body.access_token);
+  const payload = res.body.access_token.split(".")[1].replace(/-/g, "+").replace(/_/g, "/");
+  bru.setVar("writerSub", JSON.parse(Buffer.from(payload, "base64").toString()).sub);
 }
 
 tests {

@@ -1,0 +1,17 @@
+meta {
+  name: Unblock writer
+  type: http
+  seq: 10
+}
+
+delete {
+  url: {{roleSyncUrl}}/blocks/{{writerSub}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("returns 200", () => {
+    expect(res.status).to.equal(200);
+  });
+}

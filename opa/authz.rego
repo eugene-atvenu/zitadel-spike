@@ -14,13 +14,20 @@ project := data.routes[input.route.id]
 
 roles := object.get(data.server_roles, [project, sub], [])
 
-allow if input.request.method == "GET"
+blocked if data.blocked[sub]
 
 allow if {
+	not blocked
+	input.request.method == "GET"
+}
+
+allow if {
+	not blocked
 	input.request.method in {"POST", "PUT", "PATCH", "DELETE"}
 	"writer" in roles
 }
 
-reason := "writer role required" if not allow
+reason := "user blocked" if blocked
+else := "writer role required" if not allow
 
 headers := {"X-Roles": concat(",", roles)}
